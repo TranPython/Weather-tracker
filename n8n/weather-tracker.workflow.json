@@ -1,0 +1,334 @@
+{
+  "name": "Weather tracker",
+  "nodes": [
+    {
+      "name": "Every 15 min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        -100
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 */15 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "cef60ca6-3eae-5dbb-a175-d1b949e548ac"
+    },
+    {
+      "name": "Test now",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        100
+      ],
+      "parameters": {},
+      "id": "359ffd6d-6234-5997-9c8c-78b1f1fe4684"
+    },
+    {
+      "name": "Open-Meteo Forecast",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.open-meteo.com/v1/forecast?latitude=35.000&longitude=137.020&timezone=Asia%2FTokyo&wind_speed_unit=ms&past_days=2&forecast_days=3&hourly=temperature_2m,relative_humidity_2m,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_gusts_10m,uv_index,shortwave_radiation",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "c313e663-9031-5c3f-9b10-71a59fd3a1bd",
+      "executeOnce": true,
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "name": "Open-Meteo Air Quality",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=35.000&longitude=137.020&timezone=Asia%2FTokyo&forecast_days=2&hourly=pm2_5,dust",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "e2716161-076f-5963-ae73-a93a13f7547c",
+      "executeOnce": true,
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "name": "JMA Warnings",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://www.jma.go.jp/bosai/warning/data/r8/230000.json",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "7368290d-768b-5e3d-9d4c-a393bc278bce",
+      "executeOnce": true,
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "name": "JMA Forecast",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://www.jma.go.jp/bosai/forecast/data/forecast/230000.json",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "6abd6f80-a5c7-50d2-bf25-4987ea257a3b",
+      "executeOnce": true,
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "name": "JMA Typhoon List",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://www.jma.go.jp/bosai/typhoon/data/targetTc.json",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "1e83a2be-f8aa-50e3-acb5-4b135d1d4f3e",
+      "executeOnce": true,
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "alwaysOutputData": true
+    },
+    {
+      "name": "JMA Typhoon Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://www.jma.go.jp/bosai/typhoon/data/{{ $json.tropicalCyclone }}/specifications.json",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "1250407e-1789-5618-9f12-917579884051",
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "name": "Analyze & Decide",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Weather tracker – Kariya (448-0003). Code node \"Analyze & Decide\" (Run once for all items).\n// Chạy mỗi 15 phút; tự quyết định có nhắn Telegram hay không. Trả về [] = im lặng.\n\n// ===================== CONFIG =====================\nconst CFG = {\n  place: 'Kariya',\n  lat: 35.000, lon: 137.020,          // 刈谷市一ツ木町 (448-0003)\n  jmaCity: '2321000',                 // 刈谷市 (class20)\n  jmaArea: '230010',                  // 愛知県西部 (class10, dùng cho 降水確率)\n  morningWeekday: '06:45',            // brief sáng ngày làm việc (dậy 6:30, đi 7:30)\n  morningWeekend: '08:00',\n  afternoon: '16:00',                 // check trước giờ về (ngày làm việc)\n  evening: '21:00',                   // preview ngày mai\n  awake: [6 * 60 + 30, 23 * 60],      // giờ thức (phút trong ngày)\n  commuteOut: [7, 9],                 // giờ ra ngoài buổi sáng [from, to)\n  commuteHome: [17, 20],              // giờ về\n  atWork: [7 * 60 + 30, 17 * 60],     // đang ở công ty → không nhắc \"sắp mưa\"\n  sendMinSev: 2,                      // gửi brief nếu có mục >= mức này\n  sendIfSev1Count: 2,                 // ...hoặc có >= N mục mức 1\n  rainSoonCooldownH: 6,\n  ignoreWarnings: ['07', '16', '37'], // 波浪 – không liên quan sinh hoạt\n};\n\n// ===================== HELPERS =====================\nconst tz = 'Asia/Tokyo';\nconst now = DateTime.now().setZone(tz);\nconst today = now.toISODate();\nconst tomorrow = now.plus({ days: 1 }).toISODate();\nconst nowMin = now.hour * 60 + now.minute;\nconst slot = now.toFormat('HH:') + String(Math.floor(now.minute / 15) * 15).padStart(2, '0');\nconst awake = nowMin >= CFG.awake[0] && nowMin < CFG.awake[1];\nconst isWorkday = (iso) => DateTime.fromISO(iso, { zone: tz }).weekday <= 5;\nconst DOW = ['', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];\nconst dayLabel = (iso) => { const d = DateTime.fromISO(iso, { zone: tz }); return `${DOW[d.weekday]} ${d.day}/${d.month}`; };\n\nlet isManual = false;\ntry { isManual = $('Test now').isExecuted; } catch (e) {}\nconst state = $getWorkflowStaticData('global');\nstate.sent = state.sent || {};\nstate.cooldown = state.cooldown || {};\nstate.tc = state.tc || {};\n\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst r1 = (x) => Math.round(x * 10) / 10;\nconst safe = (name) => {\n  try { return $(name).all().map((i) => i.json).filter((j) => j && !j.error && Object.keys(j).length); }\n  catch (e) { return []; }\n};\nconst toRows = (src) => {\n  const rows = [];\n  if (!src || !src.hourly || !src.hourly.time) return rows;\n  const keys = Object.keys(src.hourly).filter((k) => k !== 'time');\n  src.hourly.time.forEach((t, i) => {\n    const o = { t, date: t.slice(0, 10), h: +t.slice(11, 13) };\n    keys.forEach((k) => { o[k] = src.hourly[k][i]; });\n    rows.push(o);\n  });\n  return rows;\n};\nconst H = toRows(safe('Open-Meteo Forecast')[0]);\nconst AQ = toRows(safe('Open-Meteo Air Quality')[0]);\nconst hrs = (rows, date, from, to) => rows.filter((x) => x.date === date && x.h >= from && x.h < to);\nconst mx = (a, k) => (a.length ? Math.max(...a.map((x) => x[k] ?? -999)) : null);\nconst mn = (a, k) => (a.length ? Math.min(...a.map((x) => x[k] ?? 999)) : null);\nconst avg = (a, k) => (a.length ? a.reduce((s, x) => s + (x[k] ?? 0), 0) / a.length : null);\n\n// Độ ẩm tuyệt đối (g/m³) – < 7 là vùng virus cúm dễ sống/lây\nconst absHum = (T, RH) => (6.112 * Math.exp((17.67 * T) / (T + 243.5)) * RH * 2.1674) / (273.15 + T);\n// WBGT ước tính (công thức 小野 – 環境省 dùng cho dự báo), SR: kW/m², WS: m/s\nconst wbgt = (T, RH, SR, WS) => 0.735 * T + 0.0374 * RH + 0.00292 * T * RH + 7.619 * SR - 4.557 * SR * SR - 0.0572 * WS - 4.064;\n\nconst WX = (c) => {\n  if (c >= 95) return ['⛈', 'giông sét'];\n  if (c >= 85 || (c >= 71 && c <= 77)) return ['❄️', 'tuyết'];\n  if (c >= 80) return ['🌦', 'mưa rào'];\n  if (c >= 65) return ['🌧', 'mưa to'];\n  if (c >= 61) return ['🌧', 'mưa'];\n  if (c >= 51) return ['🌦', 'mưa phùn'];\n  if (c >= 45) return ['🌫', 'sương mù'];\n  if (c === 3) return ['☁️', 'nhiều mây'];\n  if (c === 2) return ['⛅', 'mây rải rác'];\n  return ['☀️', 'nắng'];\n};\n\n// ===================== JMA =====================\nconst jmaPops = (() => {\n  const fc = safe('JMA Forecast')[0];\n  const ts = fc && fc.timeSeries && fc.timeSeries[1];\n  const area = ts && (ts.areas || []).find((a) => a.area && a.area.code === CFG.jmaArea);\n  if (!area) return [];\n  return ts.timeDefines\n    .map((t, i) => ({ date: t.slice(0, 10), h: +t.slice(11, 13), pop: area.pops[i] }))\n    .filter((p) => p.pop !== '' && p.pop != null)\n    .map((p) => ({ ...p, pop: +p.pop }));\n})();\n\n// Bảng mã 防災気象情報 mới (từ 29/5/2026)\nconst W = {\n  '33': ['大雨特別警報', 50], '43': ['大雨危険警報', 40], '03': ['大雨警報', 30], '10': ['大雨注意報', 20],\n  '39': ['土砂災害特別警報', 50], '49': ['土砂災害危険警報', 40], '09': ['土砂災害警報', 30], '29': ['土砂災害注意報', 20],\n  '38': ['高潮特別警報', 50], '48': ['高潮危険警報', 40], '08': ['高潮警報', 30], '19': ['高潮注意報', 20],\n  '35': ['暴風特別警報', 50], '05': ['暴風警報', 30], '15': ['強風注意報', 20],\n  '32': ['暴風雪特別警報', 50], '02': ['暴風雪警報', 30], '13': ['風雪注意報', 20],\n  '36': ['大雪特別警報', 50], '06': ['大雪警報', 30], '12': ['大雪注意報', 20],\n  '37': ['波浪特別警報', 50], '07': ['波浪警報', 30], '16': ['波浪注意報', 20],\n  '14': ['雷注意報', 20], '17': ['融雪注意報', 20], '20': ['濃霧注意報', 20], '21': ['乾燥注意報', 20],\n  '22': ['なだれ注意報', 20], '23': ['低温注意報', 20], '24': ['霜注意報', 20], '25': ['着氷注意報', 20], '26': ['着雪注意報', 20],\n};\nconst IMMEDIATE_ADVISORY = ['10', '29', '14', '15']; // 注意報 đáng báo ngay khi đang thức\n\nconst warnings = (() => {\n  const act = {};\n  let headline = '';\n  for (const r of safe('JMA Warnings')) {\n    for (const a of (r.warning && r.warning.class20Items) || []) {\n      if (a.areaCode !== CFG.jmaCity) continue;\n      for (const k of a.kinds || []) {\n        if (!k.code || /解除|なし/.test(k.status || '') || CFG.ignoreWarnings.includes(k.code)) continue;\n        const [name, level] = W[k.code] || [`code ${k.code}`, 20];\n        act[k.code] = { code: k.code, name, level, status: k.status };\n        headline = r.headlineText || headline;\n      }\n    }\n  }\n  return { list: Object.values(act).sort((a, b) => b.level - a.level), headline };\n})();\nconst wIcon = (lv) => (lv >= 50 ? '🟪' : lv >= 40 ? '🟥' : lv >= 30 ? '🟧' : '🟨');\nconst warnLine = (list) => list.map((w) => `${wIcon(w.level)} ${w.name}${w.level >= 30 ? ` (L${w.level / 10})` : ''}`).join(', ');\n\n// ===================== BÃO =====================\nconst typhoons = (() => {\n  const out = [];\n  let cur = null;\n  for (const it of safe('JMA Typhoon Details')) {\n    if (it.part === 'title') {\n      cur = { num: it.typhoonNumber || '', name: (it.name && (it.name.jp || it.name.en)) || '', cat: it.category && it.category.jp, pts: [] };\n      out.push(cur);\n    } else if (cur && it.position && it.position.deg) {\n      const [la, lo] = it.position.deg;\n      const toR = Math.PI / 180;\n      const d = 6371 * 2 * Math.asin(Math.sqrt(Math.sin(((la - CFG.lat) * toR) / 2) ** 2 +\n        Math.cos(CFG.lat * toR) * Math.cos(la * toR) * Math.sin(((lo - CFG.lon) * toR) / 2) ** 2));\n      const storm = Math.max(0, ...((it.stormWarning || []).map((s) => (s.range && s.range.km) || 0)));\n      cur.pts.push({ d, circle: (it.probabilityCircleRadius && it.probabilityCircleRadius.km) || 0, storm,\n        t: it.validtime && it.validtime.JST, wind: it.maximumWind && it.maximumWind.sustained && it.maximumWind.sustained['m/s'],\n        p: it.pressure, intensity: it.intensity });\n    }\n  }\n  return out.map((tc) => {\n    if (!tc.pts.length) return null;\n    const c = tc.pts.reduce((a, b) => (b.d < a.d ? b : a));\n    const inStormArea = c.d <= c.circle + c.storm; // Kariya nằm trong 暴風警戒域 dự báo\n    const risk = inStormArea || c.d <= 300 ? 'high' : c.d <= 1000 || c.d <= c.circle + c.storm + 300 ? 'watch' : 'far';\n    const hoursAhead = c.t ? DateTime.fromISO(c.t).diff(now, 'hours').hours : 999;\n    const no = tc.num ? `Bão số ${+tc.num.slice(2)}` : 'Áp thấp';\n    const when = c.t ? DateTime.fromISO(c.t, { zone: tz }).toFormat('d/M HH') + 'h' : '';\n    const text = `${no} (${esc(tc.name)}): gần Kariya nhất ~${Math.round(c.d)} km lúc ${when}` +\n      `${c.circle ? ` (vòng xác suất ${c.circle} km)` : ''}, gió ${c.wind || '?'} m/s, ${c.p} hPa`;\n    return { key: tc.num || tc.name, risk, soon: hoursAhead <= 72,\n      text: text + (risk === 'high' ? ' — <b>Kariya nằm trong 暴風警戒域 dự báo</b>' : ' — theo dõi') };\n  }).filter((x) => x && x.risk !== 'far');\n})();\n\n// ===================== PHÂN TÍCH NGÀY =====================\nconst wet = (x) => (x.precipitation ?? 0) >= 0.3 || (x.precipitation_probability ?? 0) >= 50;\nfunction rainSpans(rows) {\n  const out = [];\n  let cur = null;\n  for (const x of rows) {\n    if (wet(x)) {\n      if (!cur) { cur = { from: x.h, to: x.h + 1, mm: 0, pop: 0 }; out.push(cur); }\n      cur.to = x.h + 1; cur.mm = Math.max(cur.mm, x.precipitation || 0); cur.pop = Math.max(cur.pop, x.precipitation_probability || 0);\n    } else cur = null;\n  }\n  return out;\n}\n\nfunction laundry(date, workday) {\n  const until = workday ? CFG.commuteHome[1] - 1 : 17;\n  const win = hrs(H, date, 8, until);\n  if (win.length < 5) return null;\n  const aq = hrs(AQ, date, 8, until);\n  const rainAt = win.find((x) => (x.precipitation || 0) >= 0.2 || (x.precipitation_probability || 0) >= 40);\n  const rh = avg(hrs(H, date, 9, 16), 'relative_humidity_2m');\n  const sr = avg(hrs(H, date, 9, 15), 'shortwave_radiation');\n  const wind = avg(hrs(H, date, 9, 16), 'wind_speed_10m');\n  const gust = mx(win, 'wind_gusts_10m');\n  const dirty = (mx(aq, 'pm2_5') ?? 0) >= 35 || (mx(aq, 'dust') ?? 0) >= 50;\n  let lv; let text;\n  if (rainAt) { lv = 0; text = `Phơi trong nhà (部屋干し) — có thể mưa từ ~${rainAt.h}h`; }\n  else if (dirty) { lv = 0; text = 'Phơi trong nhà — nhiều bụi/PM2.5/黄砂'; }\n  else if (rh >= 80 || (sr < 150 && wind < 2)) { lv = 1; text = `Phơi ngoài được nhưng khô chậm (ẩm ~${Math.round(rh)}%)`; }\n  else if (rh <= 65 && (sr >= 300 || wind >= 3)) { lv = 3; text = 'Rất hợp giặt & phơi ngoài'; }\n  else { lv = 2; text = 'Phơi ngoài OK'; }\n  if (lv >= 2 && gust >= 10) text += `, gió giật ${Math.round(gust)} m/s → kẹp chặt`;\n  if (lv >= 1) {\n    const late = hrs(H, date, until, 23).find(wet);\n    if (late) text += ` · nhớ cất đồ trước ~${late.h}h`;\n  }\n  return { lv, text };\n}\n\nfunction analyzeDay(date, workday) {\n  const all = hrs(H, date, 0, 24);\n  if (all.length < 20) return null;\n  const f = [];\n  const add = (sev, icon, text) => f.push({ sev, icon, text });\n  const day = hrs(H, date, 6, 21);\n  const win = workday ? [CFG.commuteOut, CFG.commuteHome] : [[8, 21]];\n  const inWin = (h) => win.some(([a, b]) => h >= a && h < b);\n  const tmax = mx(all, 'temperature_2m');\n  const tmin = mn(all, 'temperature_2m');\n\n  // Mưa / ô\n  const spans = rainSpans(hrs(H, date, 6, 23));\n  const jp = jmaPops.filter((p) => p.date === date && p.h >= 6);\n  const jmaMax = Math.max(0, ...jp.map((p) => p.pop));\n  const hitWin = spans.some((s) => win.some(([a, b]) => s.from < b && s.to > a));\n  const popWin = Math.max(0, ...day.filter((x) => inWin(x.h)).map((x) => x.precipitation_probability || 0));\n  const maxMm = Math.max(0, ...spans.map((s) => s.mm));\n  const jTxt = jp.length ? ` · JMA ${jp.map((p) => `${p.h}-${p.h + 6}h ${p.pop}%`).join(', ')}` : '';\n  const sTxt = spans.map((s) => `${s.from}–${s.to}h (${s.pop}%, ${r1(s.mm)}mm/h)`).join('; ');\n  if (maxMm >= 20) add(3, '🌊', `Mưa rất to (${r1(maxMm)}mm/h) — đề phòng ngập đường/hầm chui`);\n  else if (maxMm >= 10) add(3, '🌧', `Mưa to (${r1(maxMm)}mm/h) — giày chống nước, đi sớm hơn`);\n  if (hitWin || jmaMax >= 50) add(2, '☂️', `<b>Mang ô</b>: ${sTxt || 'khả năng mưa cao'}${jTxt}`);\n  else if (spans.length) add(1, '🌂', `Mưa ${sTxt} (lúc bạn ở trong nhà/công ty) — ô gấp phòng hờ${jTxt}`);\n  else if (popWin >= 30 || jmaMax >= 30) add(1, '🌂', `Có thể mưa (${Math.max(popWin, jmaMax)}%) — bỏ ô gấp vào túi${jTxt}`);\n\n  // Giông, tuyết, sương mù\n  const th = day.find((x) => (x.weather_code || 0) >= 95);\n  if (th) add(2, '⛈', `Có thể giông sét ~${th.h}h — tránh chỗ trống, rút phích thiết bị nhạy cảm`);\n  const sn = day.find((x) => [71, 73, 75, 77, 85, 86].includes(x.weather_code));\n  if (sn) add(2, '❄️', `Có thể có tuyết ~${sn.h}h — đường trơn, đi sớm`);\n  const fog = hrs(H, date, 5, 9).find((x) => x.weather_code === 45 || x.weather_code === 48);\n  if (fog) add(1, '🌫', 'Sương mù buổi sáng — tầm nhìn kém nếu lái xe');\n\n  // Gió\n  const gust = mx(day.filter((x) => inWin(x.h) || !workday), 'wind_gusts_10m') ?? 0;\n  if (gust >= 20) add(3, '💨', `Gió giật rất mạnh ${Math.round(gust)} m/s — không dùng ô được, cẩn thận vật bay, cất đồ ban công`);\n  else if (gust >= 15) add(2, '💨', `Gió giật mạnh ${Math.round(gust)} m/s — ô dễ lật, cân nhắc áo mưa`);\n  else if (gust >= 12) add(1, '🍃', `Gió khá mạnh (giật ${Math.round(gust)} m/s)`);\n\n  // Nóng\n  const wb = Math.max(...hrs(H, date, 9, 18).map((x) => wbgt(x.temperature_2m, x.relative_humidity_2m, (x.shortwave_radiation || 0) / 1000, x.wind_speed_10m || 0)));\n  if (tmax >= 35 || wb >= 31) add(3, '🥵', `Nắng nóng nguy hiểm: max ${r1(tmax)}°C, WBGT ~${Math.round(wb)} (危険) — uống nước + muối, hạn chế ra ngoài, bật điều hòa`);\n  else if (wb >= 28) add(2, '🥵', `Nóng: max ${r1(tmax)}°C, WBGT ~${Math.round(wb)} (厳重警戒) — mang nước, 冷感タオル`);\n  else if (wb >= 25 && tmax >= 28) add(1, '☀️', `Khá nóng: max ${r1(tmax)}°C (WBGT ~${Math.round(wb)} 警戒)`);\n\n  // Lạnh & biến động nhiệt\n  if (tmin <= 0) add(2, '🥶', `Min ${r1(tmin)}°C — có thể đóng băng: kính xe/đường trơn, mặc ấm`);\n  else if (tmin <= 5) add(1, '🧣', `Sáng lạnh ${r1(tmin)}°C — áo ấm, khăn`);\n  const prev = DateTime.fromISO(date, { zone: tz }).minus({ days: 1 }).toISODate();\n  const pmax = mx(hrs(H, prev, 0, 24), 'temperature_2m');\n  if (pmax != null && pmax > -900) {\n    const dT = tmax - pmax;\n    if (Math.abs(dT) >= 5) add(2, dT < 0 ? '📉' : '📈', `Nhiệt độ max ${dT < 0 ? 'giảm' : 'tăng'} ${r1(Math.abs(dT))}°C so với hôm trước (${r1(pmax)} → ${r1(tmax)}°C) — chỉnh quần áo`);\n  }\n  if (workday) {\n    const eve = hrs(H, date, CFG.commuteHome[0], CFG.commuteHome[1]);\n    const eveMin = mn(eve, 'temperature_2m');\n    if (eveMin != null && tmax - eveMin >= 8 && eveMin < 18) add(1, '🧥', `Chiều tối hạ còn ~${r1(eveMin)}°C — mang áo khoác mỏng`);\n  }\n\n  // UV\n  const uv = mx(hrs(H, date, 9, 16), 'uv_index') ?? 0;\n  if (uv >= 11) add(2, '🧴', `UV cực mạnh (${r1(uv)}) — kem chống nắng, mũ, kính`);\n  else if (uv >= (workday ? 8 : 6)) add(1, '🧴', `UV mạnh (${r1(uv)}) — kem chống nắng nếu ra ngoài buổi trưa`);\n\n  // Độ ẩm / hô hấp\n  const rhMin = mn(day, 'relative_humidity_2m');\n  const ah = avg(all.map((x) => ({ v: absHum(x.temperature_2m, x.relative_humidity_2m) })), 'v');\n  const rhDay = avg(hrs(H, date, 9, 18), 'relative_humidity_2m');\n  if (ah < 7) add(ah < 5 ? 2 : 1, '😷', `Độ ẩm tuyệt đối thấp (${r1(ah)} g/m³) — virus cúm/cảm dễ lây: khẩu trang chỗ đông, máy tạo ẩm 50–60%`);\n  if (rhMin <= 30) add(1, '💧', `Rất khô (RH min ${rhMin}%) — uống nước, dưỡng ẩm, cẩn thận tĩnh điện`);\n  if (rhDay >= 80 && tmax >= 27) add(1, '💦', `Oi bức (ẩm ~${Math.round(rhDay)}%) — bật 除湿, chú ý nấm mốc/đồ ăn`);\n\n  // Không khí\n  const aq = hrs(AQ, date, 6, 22);\n  const pm = mx(aq, 'pm2_5') ?? 0;\n  const dust = mx(aq, 'dust') ?? 0;\n  if (pm >= 70) add(3, '😷', `PM2.5 rất cao (${Math.round(pm)} µg/m³, mức 注意喚起) — hạn chế ra ngoài, đóng cửa sổ, khẩu trang N95`);\n  else if (pm >= 35) add(2, '😷', `PM2.5 cao (${Math.round(pm)} µg/m³) — đeo khẩu trang khi ra ngoài`);\n  if (dust >= 50) add(2, '🟤', `黄砂/bụi (${Math.round(dust)} µg/m³) — khẩu trang, không phơi đồ ngoài, rửa xe sau`);\n\n  // Phấn hoa (heuristic tháng 2–4: ấm, gió, khô → bay nhiều)\n  const mon = DateTime.fromISO(date).month;\n  if (mon >= 2 && mon <= 4 && tmax >= 13 && !spans.length && gust >= 8) add(1, '🤧', 'Ngày ấm, gió, khô mùa 花粉 — phấn hoa bay nhiều: khẩu trang, kính');\n\n  const dom = day.reduce((m, x) => ((x.weather_code || 0) > m ? x.weather_code : m), 0);\n  return { date, workday, flags: f.sort((a, b) => b.sev - a.sev), tmax, tmin, wx: WX(dom), laundry: laundry(date, workday) };\n}\n\nconst worth = (a) => a && (a.flags.some((x) => x.sev >= CFG.sendMinSev) || a.flags.filter((x) => x.sev >= 1).length >= CFG.sendIfSev1Count);\nconst lines = (a, minSev = 1) => a.flags.filter((x) => x.sev >= minSev).map((x) => `${x.icon} ${x.text}`);\n\n// ===================== QUYẾT ĐỊNH GỬI =====================\nconst parts = [];\nlet briefHasWarn = false;\nconst dataOk = H.length > 0;\nconst morningSlot = isWorkday(today) ? CFG.morningWeekday : CFG.morningWeekend;\n\n// 1) Brief buổi sáng\nif (isManual || (slot === morningSlot && state.sent.morning !== today)) {\n  state.sent.morning = today;\n  if (!dataOk) {\n    parts.push('⚠️ Không lấy được dữ liệu Open-Meteo sáng nay — tự xem tenki.jp nhé.');\n  } else {\n    const a = analyzeDay(today, isWorkday(today));\n    const L = a.laundry;\n    const prevBad = [1, 2].every((n) => { const d = now.minus({ days: n }).toISODate(); const l = laundry(d, false); return l && l.lv <= 1; });\n    const goodAfterBad = L && L.lv === 3 && prevBad;\n    const hasWarn = warnings.list.length > 0;\n    const tcHigh = typhoons.some((t) => t.risk === 'high' && t.soon);\n    if (isManual || worth(a) || goodAfterBad || hasWarn || tcHigh) {\n      const hdr = `${a.wx[0]} <b>Sáng ${dayLabel(today)} · ${CFG.place}</b>  ${r1(a.tmin)}–${r1(a.tmax)}°C, ${a.wx[1]}`;\n      const body = [];\n      if (hasWarn) { body.push(`🚨 JMA: ${warnLine(warnings.list)}`); briefHasWarn = true; }\n      typhoons.forEach((t) => body.push(`🌀 ${t.text}`));\n      body.push(...lines(a));\n      if (!body.length) body.push('✅ Không có gì bất thường.');\n      if (L) body.push(`🧺 ${L.text}${goodAfterBad ? ' (sau mấy ngày ẩm ướt — tranh thủ!)' : ''}`);\n      parts.push([hdr, ...body].join('\\n'));\n      state.homeRainNotified = a.flags.some((x) => x.icon === '☂️') ? today : state.homeRainNotified;\n    }\n  }\n}\n\n// 2) Trước giờ về (ngày làm việc)\nif (!isManual && dataOk && isWorkday(today) && slot === CFG.afternoon && state.sent.afternoon !== today) {\n  state.sent.afternoon = today;\n  const eve = hrs(H, today, CFG.commuteHome[0], CFG.commuteHome[1]);\n  const rain = eve.filter(wet);\n  const gust = mx(eve, 'wind_gusts_10m') ?? 0;\n  const msg = [];\n  if (rain.length && state.homeRainNotified !== today) {\n    msg.push(`☂️ Giờ về có mưa: ${rain[0].h}–${rain[rain.length - 1].h + 1}h (tối đa ${Math.max(...rain.map((x) => x.precipitation_probability || 0))}%, ${r1(Math.max(...rain.map((x) => x.precipitation || 0)))}mm/h) — nhớ lấy ô.`);\n  }\n  if (gust >= 15) msg.push(`💨 Gió giật ${Math.round(gust)} m/s lúc về — cẩn thận.`);\n  if (msg.length) parts.push(`🌆 <b>Trước giờ về</b>\\n${msg.join('\\n')}`);\n}\n\n// 3) Preview ngày mai (21:00)\nif (isManual || (dataOk && slot === CFG.evening && state.sent.evening !== today)) {\n  state.sent.evening = today;\n  const b = analyzeDay(tomorrow, isWorkday(tomorrow));\n  if (b) {\n    const important = b.flags.filter((x) => x.sev >= 2);\n    const tcHigh = typhoons.filter((t) => t.risk === 'high' && t.soon);\n    const night = hrs(H, today, 21, 24).concat(hrs(H, tomorrow, 0, 6)).filter(wet);\n    if (isManual || important.length || tcHigh.length || night.length) {\n      const todo = [];\n      if (b.flags.some((x) => x.icon === '☂️')) todo.push('để ô cạnh cửa');\n      if (b.flags.some((x) => ['🌊', '🌧', '❄️'].includes(x.icon) || x.sev >= 3)) todo.push('đặt báo thức sớm hơn ~15 phút');\n      if (b.flags.some((x) => ['🥶', '🧣', '📉'].includes(x.icon))) todo.push('chuẩn bị áo ấm');\n      if (b.laundry && b.laundry.lv === 0) todo.push('đừng hẹn giờ giặt để phơi ngoài');\n      if (b.laundry && b.laundry.lv === 3) todo.push('mai phơi đồ ngoài tốt — có thể hẹn giờ máy giặt');\n      if (tcHigh.length) todo.push('bão: cất đồ ban công, sạc pin dự phòng, nước + đèn pin, xem lịch tàu sáng mai');\n      const body = [];\n      if (night.length) body.push(`🌙 Đêm nay có mưa từ ~${night[0].h}h — đóng cửa sổ, cất đồ ban công`);\n      tcHigh.forEach((t) => body.push(`🌀 ${t.text}`));\n      body.push(...lines(b, isManual ? 1 : 2));\n      if (!body.length) body.push('✅ Không có gì bất thường.');\n      if (todo.length) body.push(`📝 Tối nay: ${todo.join('; ')}`);\n      parts.push([`${b.wx[0]} <b>Ngày mai ${dayLabel(tomorrow)}</b>  ${r1(b.tmin)}–${r1(b.tmax)}°C, ${b.wx[1]}`, ...body].join('\\n'));\n    }\n  }\n}\n\n// 4) Cảnh báo JMA thay đổi (mọi lúc; ban đêm chỉ ≥ 危険警報)\n{\n  const prev = state.warn || {};\n  const curMap = Object.fromEntries(warnings.list.map((w) => [w.code, w.level]));\n  const minLv = awake ? 30 : 40;\n  const fresh = warnings.list.filter((w) => !(w.code in prev) && (w.level >= minLv || (awake && IMMEDIATE_ADVISORY.includes(w.code))));\n  const lifted = Object.keys(prev).filter((c) => !(c in curMap) && prev[c] >= 30);\n  if (!isManual && !briefHasWarn && (fresh.length || (awake && lifted.length))) {\n    const msg = [];\n    if (fresh.length) msg.push(`🚨 <b>JMA phát cảnh báo cho Kariya</b>: ${warnLine(fresh)}`);\n    if (warnings.headline && fresh.length) msg.push(esc(warnings.headline));\n    if (awake && lifted.length) msg.push(`✅ Đã dỡ: ${lifted.map((c) => (W[c] || [c])[0]).join(', ')}`);\n    parts.push(msg.join('\\n'));\n  }\n  if (!isManual) state.warn = curMap;\n}\n\n// 5) Bão tiến gần (1 lần/ngày/cơn khi đang thức)\nif (!isManual && awake) {\n  for (const t of typhoons.filter((x) => x.risk === 'high' && x.soon)) {\n    if (state.tc[t.key] === today) continue;\n    state.tc[t.key] = today;\n    if (!parts.some((p) => p.includes('🌀'))) parts.push(`🌀 <b>Bão có thể ảnh hưởng Kariya</b>\\n${t.text}\\nChuẩn bị: cất đồ ban công, sạc pin, nước + đèn pin, theo dõi JMA.`);\n  }\n}\n\n// 6) Sắp mưa trong 1–2 giờ tới (khi ở nhà & đang thức)\nif (!isManual && dataOk && awake && !(isWorkday(today) && nowMin >= CFG.atWork[0] && nowMin < CFG.atWork[1])) {\n  const idx = H.findIndex((x) => x.t === now.toFormat(\"yyyy-MM-dd'T'HH:00\"));\n  const cur = H[idx];\n  const next = H.slice(idx + 1, idx + 3);\n  const hit = next.find((x) => (x.precipitation || 0) >= 1 && (x.precipitation_probability || 0) >= 60);\n  const thunder = next.find((x) => (x.weather_code || 0) >= 95);\n  const last = state.cooldown.rainSoon || 0;\n  if (idx >= 0 && (cur.precipitation || 0) < 0.2 && (hit || thunder) && Date.now() - last > CFG.rainSoonCooldownH * 3600e3) {\n    const x = hit || thunder;\n    state.cooldown.rainSoon = Date.now();\n    parts.push(`${thunder ? '⛈' : '🌧'} Sắp mưa khoảng ${x.h}h (${x.precipitation_probability}%, ${r1(x.precipitation || 0)}mm/h) — cất đồ phơi, đóng cửa sổ.`);\n  }\n}\n\nif (!parts.length) return [];\nreturn [{ json: { text: (isManual ? '🧪 TEST\\n' : '') + parts.join('\\n\\n'), slot } }];\n"
+      },
+      "id": "c74a22ef-c6f3-5deb-a6a7-f7654e886780"
+    },
+    {
+      "name": "Send Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1760,
+        0
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "-1003796442621",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "N7v0628OBczrjflT",
+          "name": "Telegram account"
+        }
+      },
+      "id": "0c9203d6-7f64-5098-9886-5d3062ca02c5",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        200,
+        -420
+      ],
+      "parameters": {
+        "width": 1100,
+        "height": 280,
+        "content": "## Weather tracker – Kariya 448-0003\nChạy mỗi 15 phút (TZ Asia/Tokyo). Node **Analyze & Decide** tự quyết định gửi hay im lặng:\n- 06:45 (T2–T6) / 08:00 (T7–CN): brief sáng — chỉ gửi khi có điều đáng chú ý (ô, gió, nóng/lạnh, UV, ẩm, PM2.5, cảnh báo, bão, giặt đồ)\n- 16:00: mưa/gió giờ về (nếu sáng chưa nhắc)\n- 21:00: preview ngày mai + việc cần chuẩn bị tối nay\n- Bất kỳ lúc nào: JMA 警報/注意報 mới (đêm chỉ ≥ 危険警報), bão vào 暴風警戒域 ≤72h, sắp mưa 1–2h tới khi ở nhà\nChỉnh giờ/ngưỡng ở khối `CFG` đầu Code node. **Test now** = gửi full report 🧪.\nNguồn: Open-Meteo (JMA model) · Open-Meteo Air Quality (CAMS) · JMA bosai (r8 warnings, 降水確率, typhoon)"
+      },
+      "id": "93a55c42-4cbd-5236-bd76-43b20fee488e"
+    }
+  ],
+  "connections": {
+    "Every 15 min": {
+      "main": [
+        [
+          {
+            "node": "Open-Meteo Forecast",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Test now": {
+      "main": [
+        [
+          {
+            "node": "Open-Meteo Forecast",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Open-Meteo Forecast": {
+      "main": [
+        [
+          {
+            "node": "Open-Meteo Air Quality",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Open-Meteo Air Quality": {
+      "main": [
+        [
+          {
+            "node": "JMA Warnings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JMA Warnings": {
+      "main": [
+        [
+          {
+            "node": "JMA Forecast",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JMA Forecast": {
+      "main": [
+        [
+          {
+            "node": "JMA Typhoon List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JMA Typhoon List": {
+      "main": [
+        [
+          {
+            "node": "JMA Typhoon Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JMA Typhoon Details": {
+      "main": [
+        [
+          {
+            "node": "Analyze & Decide",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze & Decide": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Asia/Tokyo",
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all"
+  },
+  "pinData": {}
+}
