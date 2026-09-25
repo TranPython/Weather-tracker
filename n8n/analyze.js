@@ -18,6 +18,7 @@ const CFG = {
   sendMinSev: 2,                      // gửi brief nếu có mục >= mức này
   sendIfSev1Count: 2,                 // ...hoặc có >= N mục mức 1
   rainSoonCooldownH: 6,
+  healthFailRuns: 4,                  // nguồn lỗi liên tục N lần (x15 phút) → báo
   ignoreWarnings: ['07', '16', '37'], // 波浪 – không liên quan sinh hoạt
 };
 
@@ -272,6 +273,13 @@ function analyzeDay(date, workday) {
   const rhDay = avg(hrs(H, date, 9, 18), 'relative_humidity_2m');
   if (ah < 7) add(ah < 5 ? 2 : 1, '😷', `Độ ẩm tuyệt đối thấp (${r1(ah)} g/m³) — virus cúm/cảm dễ lây: khẩu trang chỗ đông, máy tạo ẩm 50–60%`);
   if (rhMin <= 30) add(1, '💧', `Rất khô (RH min ${rhMin}%) — uống nước, dưỡng ẩm, cẩn thận tĩnh điện`);
+  // Dịch bệnh hô hấp (số liệu tuần 愛知県衛生研究所, do nhánh "Daily 12:05" cập nhật)
+  const inf = state.infection;
+  const infFresh = inf && inf.end && (Date.now() - new Date(inf.end + 'T00:00:00+09:00').getTime()) / 864e5 <= 21;
+  if (date === today && infFresh && (inf.maxLv >= 1 || inf.ariJump)) {
+    const dry = ah < 7 && inf.fluLv >= 1;
+    add(Math.min(3, Math.max(1, inf.maxLv) + (dry ? 1 : 0)), '🦠', `${esc(inf.briefLine || 'Bệnh hô hấp đang tăng')}${dry ? ' + không khí khô → dễ lây' : ''} — ${esc(inf.advice || 'khẩu trang chỗ đông')}`);
+  }
   if (rhDay >= 80 && tmax >= 27) add(1, '💦', `Oi bức (ẩm ~${Math.round(rhDay)}%) — bật 除湿, chú ý nấm mốc/đồ ăn`);
 
   // Không khí
@@ -405,6 +413,26 @@ if (!isManual && dataOk && awake && !(isWorkday(today) && nowMin >= CFG.atWork[0
     state.cooldown.rainSoon = Date.now();
     parts.push(`${thunder ? '⛈' : '🌧'} Sắp mưa khoảng ${x.h}h (${x.precipitation_probability}%, ${r1(x.precipitation || 0)}mm/h) — cất đồ phơi, đóng cửa sổ.`);
   }
+}
+
+// 7) Sức khỏe nguồn dữ liệu (HTTP node đang nuốt lỗi → tự đếm lỗi liên tiếp)
+if (!isManual) {
+  const SOURCES = ['Open-Meteo Forecast', 'Open-Meteo Air Quality', 'JMA Warnings', 'JMA Forecast', 'JMA Typhoon List'];
+  const failed = (name) => { try { const it = $(name).all(); return !it.length || it.some((i) => i.json && i.json.error); } catch (e) { return true; } };
+  state.health = state.health || {};
+  const down = []; const up = [];
+  for (const s of SOURCES) {
+    const h = state.health[s] = state.health[s] || { fails: 0, alerted: false };
+    if (failed(s)) {
+      h.fails += 1;
+      if (h.fails >= CFG.healthFailRuns && !h.alerted && awake) { h.alerted = true; down.push(s); }
+    } else {
+      if (h.alerted) up.push(s);
+      h.fails = 0; h.alerted = false;
+    }
+  }
+  if (down.length) parts.push(`⚠️ <b>Nguồn dữ liệu lỗi ≥${CFG.healthFailRuns * 15} phút</b>: ${down.join(', ')} — nhắc thời tiết có thể thiếu.`);
+  if (up.length) parts.push(`✅ Nguồn hoạt động lại: ${up.join(', ')}`);
 }
 
 if (!parts.length) return [];

@@ -1,0 +1,79 @@
+{
+  "name": "Error notifier",
+  "nodes": [
+    {
+      "name": "On Workflow Error",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "name": "Format Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Code node \"Format Error\" trong workflow \"Error notifier\".\n// Nhận output của Error Trigger, chống spam: cùng workflow + node + lỗi chỉ báo 1 lần / 3 giờ.\nconst THROTTLE_H = 3;\nconst e = $input.first().json;\nconst state = $getWorkflowStaticData('global');\nstate.seen = state.seen || {};\n\nconst wf = (e.workflow && e.workflow.name) || '?';\nconst ex = e.execution || {};\nconst err = ex.error || (e.trigger && e.trigger.error) || {};\nconst node = ex.lastNodeExecuted || (err.node && err.node.name) || (e.trigger ? 'trigger' : '?');\nconst msg = String(err.message || err.description || 'Unknown error');\nconst key = `${e.workflow && e.workflow.id}|${node}|${msg.slice(0, 120)}`;\n\nconst now = Date.now();\nfor (const k of Object.keys(state.seen)) if (now - state.seen[k].last > 24 * 3600e3) delete state.seen[k];\nconst s = state.seen[key];\nif (s && now - s.last < THROTTLE_H * 3600e3) { s.count += 1; return []; }\nconst repeats = s ? s.count : 0;\nstate.seen[key] = { last: now, count: 0 };\n\nconst esc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst when = DateTime.now().setZone('Asia/Tokyo').toFormat('d/M HH:mm');\nconst text = [\n  `🔥 <b>n8n lỗi: ${esc(wf)}</b>`,\n  `Node: <code>${esc(node)}</code> · ${when}`,\n  `<code>${esc(msg.slice(0, 500))}</code>`,\n  repeats ? `(+${repeats} lần lặp trong ${THROTTLE_H}h qua đã bị ẩn)` : '',\n  ex.url ? `<a href=\"${esc(ex.url)}\">Mở execution</a>` : '',\n].filter(Boolean).join('\\n');\nreturn [{ json: { text } }];\n"
+      }
+    },
+    {
+      "name": "Send Error to Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "-1003796442621",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    }
+  ],
+  "connections": {
+    "On Workflow Error": {
+      "main": [
+        [
+          {
+            "node": "Format Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Error": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
